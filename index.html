@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OBS HTML 时钟</title>
+<!--
+  OBS HTML 时钟 · 单文件 · 零依赖 · 透明背景（离线可用）
+
+  用法：OBS → 来源 → + → 浏览器 → 勾选「本地文件」→ 选择本文件 → 宽高保持 1920×1080
+
+  可选参数（接在浏览器源 URL / 文件路径末尾，从 ? 开始，多个用 & 连接），例如：
+    obs-clock.html?lang=en&tz=America/New_York&h24=0&tzshow=1
+  （个别环境会吃掉 file:// 的 ? 查询串，此时可改用 # 开头：obs-clock.html#lang=en&tz=Asia/Tokyo）
+
+    lang=zh    语言：zh / en / ja / ko / vi / th / es，或任意完整标签（en-GB、zh-TW、pt-BR…）。
+               日期、星期、上午/下午、计时器前缀都随语言本地化。默认 zh
+    tz=Asia/Shanghai  时区：任意 IANA 名称，默认跟随系统。常用值：
+               Asia/Shanghai · Asia/Tokyo · Asia/Seoul · Asia/Ho_Chi_Minh · Asia/Bangkok
+               Europe/London · Europe/Paris · America/New_York · America/Los_Angeles · UTC
+    tzshow=1   在日期后显示时区短名（如 GMT+8 / EDT / JST）
+    h24=0      12 小时制（默认 24 小时制；12 小时制的 上午/下午 随语言变化）
+    sec=0      隐藏秒
+    date=0     隐藏日期行
+    bar=0      隐藏时间下方的点缀线
+    blink=1    冒号每秒闪烁
+    size=18    整体字号，默认 16（1080p 建议 14~20，720p 建议 10~14）
+    color=ffd54a    文字颜色（6 位十六进制，不带 #）
+    accent=ff7ab6   点缀色：上午/下午、点缀线、计时器
+    label=文字  顶部小字（默认不显示）
+    timer=1    显示「已直播 00:00:00」（从本次加载起算，刷新归零）
+    timerlabel=LIVE   计时器前缀文字（不填则按语言给默认：中文=已直播、英语=LIVE…）
+    datefmt=iso  日期改为 2026-10-01 Thursday（默认按语言本地化）
+
+  不想用 URL 参数？直接改下面 <script> 顶部的 DEFAULTS 即可。
+  想换字体？把字体文件放在本文件同目录，取消下面注释并改成实际文件名：
+  <style>
+    @font-face { font-family:'StreamFont'; src:url('StreamFont.ttf') format('truetype'); }
+    #time, #date { font-family:'StreamFont', sans-serif; }
+  </style>
+-->
+<style>
+  :root { --fg:#fff; --accent:#4ea1ff; --size:16; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; width:100%; height:100%; background:transparent; overflow:hidden; }
+  body {
+    display:flex; align-items:center; justify-content:center;
+    font-family:"Bahnschrift","Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Yu Gothic UI","Malgun Gothic",system-ui,sans-serif;
+    color:var(--fg);
+  }
+  #wrap { text-align:center; padding:2vmin 4vmin; text-shadow:0 .03em .16em rgba(0,0,0,.55); }
+  #label { font-size:calc(var(--size) * .22vh); letter-spacing:.42em; text-indent:.42em; opacity:.9; margin-bottom:.7em; }
+  #time { font-size:calc(var(--size) * 1vh); line-height:1; font-weight:700; letter-spacing:.015em;
+          font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; white-space:nowrap; }
+  #time .sep { padding:0 .07em; }
+  body.blink #time .sep { animation:sepblink 1s steps(1,end) infinite; }
+  @keyframes sepblink { 0%,100% { opacity:1 } 50% { opacity:.2 } }
+  #ap { font-size:.34em; font-weight:600; color:var(--accent); margin-left:.16em; vertical-align:.45em; }
+  #bar { width:calc(var(--size) * .85vh); height:max(2px, calc(var(--size) * .032vh)); background:var(--accent);
+         opacity:.9; border-radius:99px; margin:.55em auto 0; }
+  #date { margin-top:.8em; font-size:calc(var(--size) * .27vh); letter-spacing:.2em; text-indent:.2em; opacity:.95; }
+  #timer { margin-top:.5em; font-size:calc(var(--size) * .24vh); letter-spacing:.08em; color:var(--accent);
+           font-variant-numeric:tabular-nums; }
+  .hide { display:none !important; }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="label" class="hide"></div>
+    <div id="time"><span id="h">--</span><span class="sep">:</span><span id="m">--</span><span class="sep" id="ssep">:</span><span id="s">--</span><span id="ap" class="hide"></span></div>
+    <div id="bar"></div>
+    <div id="date" class="hide"></div>
+    <div id="timer" class="hide"></div>
+  </div>
+<script>
+(() => {
+  'use strict';
+
+  // ── 默认值：不想用 URL 参数时，改这里 ──────────────────────
+  const DEFAULTS = {
+    h24: 1, sec: 1, date: 1, bar: 1, blink: 0, timer: 0, tzshow: 0,
+    size: 16, color: 'ffffff', accent: '4ea1ff',
+    lang: '', tz: '', label: '', timerlabel: '', datefmt: 'auto'
+  };
+  // ──────────────────────────────────────────────────────────
+
+  const $ = id => document.getElementById(id);
+  const lc = v => (v || '').toLowerCase();
+  const raw = (location.search.length > 1 ? location.search : location.hash).replace(/^[?#]/, '');
+  const q = new URLSearchParams(raw);
+  const hex = v => /^[0-9a-f]{6}$/i.test(v || '') ? '#' + v : null;
+  const flag = k => { const v = q.get(k); return v === null ? !!DEFAULTS[k] : !(v === '0' || v.toLowerCase() === 'false'); };
+  const text = k => { const v = q.get(k); return v === null ? DEFAULTS[k] : v; };
+
+  // 语言：短别名 → BCP-47；也接受完整标签（en-GB / zh-TW / pt-BR…）
+  const LOCALES = {
+    zh: 'zh-CN', 'zh-cn': 'zh-CN', 'zh-tw': 'zh-TW', 'zh-hk': 'zh-HK',
+    en: 'en-US', ja: 'ja-JP', ko: 'ko-KR', vi: 'vi-VN', th: 'th-TH', es: 'es-ES'
+  };
+  const TIMER_LABELS = { zh: '已直播', en: 'LIVE', ja: '配信中', ko: '방송 중', vi: 'ĐANG LIVE', th: 'กำลังไลฟ์', es: 'EN VIVO' };
+
+  function resolveLocale(v) {
+    if (!v) return 'zh-CN';
+    const code = LOCALES[lc(v)] || v;
+    try { new Intl.DateTimeFormat(code); return code; } catch (e) { return 'zh-CN'; }
+  }
+  const locale = resolveLocale(text('lang'));
+  const isZh = lc(locale).indexOf('zh') === 0;
+  document.documentElement.lang = locale;
+
+  const cfg = {
+    h24: flag('h24'), sec: flag('sec'), date: flag('date'), bar: flag('bar'),
+    blink: flag('blink'), timer: flag('timer'), tzshow: flag('tzshow'),
+    size: Math.min(60, Math.max(4, parseFloat(text('size')) || DEFAULTS.size)),
+    color: hex(text('color')) || '#' + DEFAULTS.color,
+    accent: hex(text('accent')) || '#' + DEFAULTS.accent,
+    locale: locale,
+    tz: text('tz') || '',
+    label: text('label') || '',
+    timerlabel: text('timerlabel') || TIMER_LABELS[lc(locale).split('-')[0]] || 'LIVE',
+    datefmt: text('datefmt') === 'iso' ? 'iso' : 'auto'
+  };
+
+  const root = document.documentElement.style;
+  root.setProperty('--size', cfg.size);
+  root.setProperty('--fg', cfg.color);
+  root.setProperty('--accent', cfg.accent);
+  if (cfg.blink) document.body.classList.add('blink');
+
+  // 时区无效时自动回退本机时区
+  function makeFmt(opts) {
+    if (cfg.tz) {
+      try { return new Intl.DateTimeFormat(cfg.locale, Object.assign({ timeZone: cfg.tz }, opts)); }
+      catch (e) { /* 无效时区，用本机时区 */ }
+    }
+    return new Intl.DateTimeFormat(cfg.locale, opts);
+  }
+  const timeFmt = makeFmt({ hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: !cfg.h24 });
+  const partsFmt = makeFmt({ year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'long' });
+  const fullFmt = makeFmt({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  const tzFmt = makeFmt({ timeZoneName: 'short' });
+
+  const elH = $('h'), elM = $('m'), elS = $('s'), elAp = $('ap'), elSep2 = $('ssep');
+  const elDate = $('date'), elTimer = $('timer'), elLabel = $('label'), elBar = $('bar');
+
+  if (!cfg.sec) { elS.classList.add('hide'); elSep2.classList.add('hide'); }
+  if (!cfg.bar) elBar.classList.add('hide');
+  if (cfg.date) elDate.classList.remove('hide');
+  if (cfg.timer) elTimer.classList.remove('hide');
+  if (!cfg.h24) elAp.classList.remove('hide');
+  if (cfg.label) { elLabel.textContent = cfg.label; elLabel.classList.remove('hide'); }
+
+  const pad = n => String(n).padStart(2, '0');
+  const t0 = Date.now();
+
+  function pick(fmt, date) {
+    const o = {};
+    for (const p of fmt.formatToParts(date)) if (p.type !== 'literal') o[p.type] = p.value;
+    return o;
+  }
+  function tzName(date) {
+    const p = tzFmt.formatToParts(date).find(x => x.type === 'timeZoneName');
+    return p ? p.value : '';
+  }
+
+  function render() {
+    const now = new Date();
+    const t = pick(timeFmt, now);
+    elH.textContent = t.hour;
+    elM.textContent = t.minute;
+    elS.textContent = t.second;
+    if (!cfg.h24) elAp.textContent = t.dayPeriod || '';
+
+    if (cfg.date) {
+      let s;
+      if (cfg.datefmt === 'iso') {
+        const d = pick(partsFmt, now);
+        s = `${d.year}-${pad(d.month)}-${pad(d.day)} ${d.weekday}`;
+      } else if (isZh) {
+        const d = pick(partsFmt, now);
+        s = `${d.year}年${d.month}月${d.day}日 ${d.weekday}`;
+      } else {
+        s = fullFmt.format(now);
+      }
+      if (cfg.tzshow) {
+        const tz = tzName(now);
+        if (tz) s += ' · ' + tz;
+      }
+      elDate.textContent = s;
+    }
+    if (cfg.timer) {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      elTimer.textContent = `${cfg.timerlabel} ${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+    }
+  }
+
+  render();
+  setInterval(render, 250);
+})();
+</script>
+</body>
+</html>
