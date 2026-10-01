@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>OBS Clock · Giờ Việt Nam (GMT+7)</title>
+<!--
+  预置页：越南语 + 越南时区（GMT+7）+ 显示时区短名。
+  OBS 浏览器源 URL 栏直接粘：https://tumuyijiao114514.github.io/obs-clock/vi.html
+  需要附加设置就接在后面，你的参数优先，例如：vi.html?timer=1&h24=0&size=18
+  本页只做一次参数转发（十来行），样式与功能都在 obs-clock.html，维护时只改那一份。
+
+  Preset page: Vietnamese + Vietnam timezone. Params appended here win over the preset.
+  Trang cài sẵn: tiếng Việt + múi giờ Việt Nam. Tham số bạn thêm sẽ được ưu tiên.
+-->
+<script>
+(function () {
+  var extra = location.search ? location.search.slice(1)
+            : (location.hash ? location.hash.slice(1) : '');
+  location.replace('./obs-clock.html?' + (extra ? extra + '&' : '') + 'lang=vi&tz=Asia/Ho_Chi_Minh&tzshow=1');
+})();
+</script>
+</head>
+<body style="margin:0;background:transparent">
+  <p style="font-family:system-ui,sans-serif;color:#888;text-align:center;margin-top:40px">
+    Đang chuyển hướng… / Redirecting…
+    <a href="./obs-clock.html?lang=vi&tz=Asia/Ho_Chi_Minh&tzshow=1">Nhấn vào đây</a>
+  </p>
+</body>
+</html>
